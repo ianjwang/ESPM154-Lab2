@@ -1,0 +1,216 @@
+---
+title: "ESPM 154, Lab 2: Neutral Landscape Models"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+## Overview and learning goals
+
+Landscape patterns can arise from many biological and environmental processes. Neutral landscape models (NLMs) give us landscapes with known statistical properties but no assumed ecological process. They provide a useful baseline for asking whether a pattern is unusual and for testing how spatial structure affects an analysis.
+
+In this lab, you will:
+
+1. Generate simple random and spatially autocorrelated neutral landscapes.
+2. Interpret semivariograms and Moran's I.
+3. Inspect the spatial scale of a real environmental raster.
+4. Test how changing raster grain changes a spatial statistic.
+
+## Set up the R session
+
+```{r setup, message=FALSE, warning=FALSE}
+rm(list = ls())
+
+if (!requireNamespace("terra", quietly = TRUE)) {
+  stop("The terra package is required. Run install.packages('terra') in the Console, then restart this document.")
+}
+
+if (!requireNamespace("ambient", quietly = TRUE)) {
+  stop("The ambient package is required. Run install.packages('ambient') in the Console, then restart this document.")
+}
+
+library(terra)
+library(ambient)
+knitr::opts_chunk$set(echo = TRUE, fig.width = 8, fig.height = 5)
+
+source("NLM_functions.R")
+
+nlm_colors <- hcl.colors(100, "Viridis")
+temp_colors <- hcl.colors(100, "Inferno")
+
+
+# Queen neighborhood: the eight cells surrounding a focal cell.
+queen_weights <- matrix(c(1, 1, 1,
+                          1, 0, 1,
+                          1, 1, 1), nrow = 3, byrow = TRUE)
+```
+
+## Part 1: Neutral landscape models
+
+### Simple random landscape
+
+The simplest NLM assigns each cell an independent random value. It has no built-in spatial structure, although a finite random landscape will rarely have Moran's I exactly equal to zero.
+
+Generate and plot a simple random NLM with 200 rows and 200 columns.
+
+```{r simple-nlm}
+simple <- nlm_simple(ncol = 200, nrow = 200)
+plot(simple, col = nlm_colors, axes = FALSE, main = "Simple random NLM")
+```
+
+### Spatially autocorrelated landscapes
+
+The `nlm_fractal()` function combines random variation generated at several spatial scales. Here, `H` controls the relative importance of broad-scale structure. Larger values produce smoother landscapes with stronger positive spatial autocorrelation.
+
+Generate a landscape with `H = 0.9`.
+
+```{r fractal-high, warning = F}
+# Generate a fractal NLM
+fractal_0.9 <- nlm_fractal(ncol = 200, nrow = 200, H = 0.9)
+
+# Plot the NLM
+plot(fractal_0.9, col = nlm_colors, axes = FALSE, main = "H = 0.9")
+```
+
+Now complete the code to generate a landscape with `H = 0.3`. Use the same seed so that the comparison emphasizes the effect of `H`.
+
+```{r fractal-low, warning = F}
+fractal_0.3 <- ### Complete this line
+```
+
+Plot the two landscapes using a common color scale.
+
+```{r compare-fractals, fig.width=9, fig.height=4}
+fractals <- c(fractal_0.3, fractal_0.9)
+plot(fractals, col = nlm_colors, axes = FALSE,
+     range = c(0, 1), nc = 2)
+```
+
+### Semivariograms
+
+A semivariogram summarizes how dissimilarity changes with distance. Low semivariance at short distances indicates that nearby cells tend to have closer values. A rapid increase indicates that variation between cells increases quickly over relatively short distances. If the curve reaches a plateau (the `sill`), the approximate distance where it levels off is the `range distance`.
+
+```{r semivariograms, fig.width=9, fig.height=4}
+var_0.3 <- semivariogram(fractal_0.3)
+var_0.9 <- semivariogram(fractal_0.9)
+
+par(mfrow = c(1, 2))
+plot_variogram(var_0.3, main = "Semivariogram H = 0.3")
+plot_variogram(var_0.9, main = "Semivariogram H = 0.9")
+par(mfrow = c(1, 1))
+```
+
+Use these plots to answer *Question 1.* 
+
+### Moran's I
+
+We can calculate Moran's I using the `autocor()` function. When calculating Moran's I, we have to specify which cells are considered neighbors. Here we will use a `queen's neighborhood` (all eight directions from each cells). 
+
+```{r moran-simple}
+simple_I <- autocor(simple, w = queen_weights, method = "moran", global = TRUE)
+simple_I
+```
+
+Calculate Moran's I for the landscape with `H = 0.9`.
+
+```{r moran-high}
+H09_I <- autocor(fractal_0.9, w = queen_weights, method = "moran", global = TRUE)
+H09_I
+```
+
+Now complete the code to calculate Moran's I for the landscape with `H = 0.3`.
+
+```{r moran-low}
+H03_I <- ### Complete this code
+H03_I
+```
+
+Use these results to answer *Question 2.*
+
+
+## Part 2: A real-world temperature raster
+
+Load annual mean temperature (AMT) for California and part of Nevada. `rast()` creates a `SpatRaster`, the raster data class used by `terra`.
+
+```{r load-temperature}
+# Load the raster
+AMT <- rast("CA_AMT.tif")
+
+# Look at what's contained in the SpatRaster object.
+AMT
+```
+
+```{r plot-temperature}
+plot(AMT, col = temp_colors, main = "Annual mean temperature")
+```
+
+Calculate Moran's I for this AMT raster using the same queen's neighborhood as above.
+
+```{r moran-temperature}
+AMT_I <- ### Complete this code
+```
+
+Use these results to answer *Question 3.*
+
+## Part 3: Effects of changing scale
+
+We can create coarser versions of the temperature raster by combining neighboring cells. Using the `aggregate()` function with the argument `fun = "mean"`, each new cell will contain the mean temperature of the cells it replaces.
+
+```{r aggregate-temperature-4x}
+# Aggregate cells by a factor of 4 (`fact = 4`)
+AMT_4 <- aggregate(AMT, fact = 4, fun = "mean", na.rm = TRUE)
+```
+
+Now, rescale the AMT raster by aggregating its cells by a factor of 16 and by a factor of 64.
+
+```{r}
+AMT_16 <- ### Complete this code
+AMT_64 <- ### Complete this code
+```
+
+Then we can plot the three AMT rasters.
+
+```{r plot-AMTs}
+# Plot all three AMT rasters
+temperature_range <- range(values(AMT), na.rm = TRUE)
+par(mfrow = c(1, 3))
+
+plot(AMT,
+     col = temp_colors,
+     range = temperature_range,
+     main = "Original")
+
+plot(AMT_4,
+     col = temp_colors,
+     range = temperature_range,
+     main = "4 x coarser")
+
+plot(AMT_16,
+     col = temp_colors,
+     range = temperature_range,
+     main = "16 x coarser")
+
+par(mfrow = c(1, 1))
+```
+
+
+Now calculate Moran's I for all three rasters.
+
+```{r compare-moran}
+moran_by_grain <- data.frame(
+  raster = c("Original", "4x coarser", "16x coarser", "64x coarser"),
+  morans_I = c(
+    AMT_I,
+    autocor(AMT_4, w = queen_weights, method = "moran", global = TRUE),
+    autocor(AMT_16, w = queen_weights, method = "moran", global = TRUE),
+    autocor(AMT_64, w = queen_weights, method = "moran", global = TRUE)
+  )
+)
+
+moran_by_grain
+```
+
+Use these results to answer Question 4. Remember that the same 3 by 3 neighborhood covers a larger geographic area after aggregation.
+
+## End of lab
